@@ -2,36 +2,52 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 
-#define MAX_BYTES 1024 * 500
 #define IS_PRINTABLE_ASCII(c) (((c) > 31) && ((c) < 127))
 #define NON_PRINTABLE_ASCII '.'
 
-size_t file_open_and_read(char *filename, char *buffer, size_t size) {
-  if (access(filename, F_OK) != 0) {
-    fprintf(stderr, "ERROR: file %s not found", filename);
-    exit(1);
-  }
-  FILE *file = fopen(filename, "r");
-  if (file == NULL) {
-    fprintf(stderr, "ERROR: could not open file %s", filename);
-    exit(1);
-  }
+size_t file_size(FILE *file) {
   size_t file_length;
   fseek(file, 0L, SEEK_END);
   file_length = ftell(file);
   fseek(file, 0L, SEEK_SET);
-  if (file_length > size) {
-    fprintf(stderr, "ERROR: file %s is too large ", filename);
-    exit(1);
-  } else if (file_length <= 0) {
-    fprintf(stderr, "ERROR: file %s is too small ", filename);
+  return file_length;
+}
+
+char *file_open_and_read(char *filename, size_t *length) {
+  if (access(filename, F_OK) != 0) {
+    fprintf(stderr, "ERROR: file %s not found\n", filename);
     exit(1);
   }
-  fread(buffer, sizeof(char), size, file);
+  FILE *file = fopen(filename, "rb");
+  if (file == NULL) {
+    fprintf(stderr, "ERROR: could not open file %s\n", filename);
+    exit(1);
+  }
+  size_t file_length = file_size(file);
+  if (file_length <= 0) {
+    fprintf(stderr, "ERROR: file %s is too small \n", filename);
+    exit(1);
+  }
+  char *buffer = malloc(sizeof(char) * file_length);
+  if (!buffer) {
+    fprintf(stderr, "Error: Memory allocation failed\n");
+    fclose(file);
+    return NULL;
+  }
+
+  size_t bytes_read = fread(buffer, 1, file_length, file);
+  if (bytes_read != file_length) {
+    fprintf(stderr, "Error: Failed to read entire file\n");
+    fclose(file);
+    free(buffer);
+    return NULL;
+  }
+  *length = file_length;
   fclose(file);
-  return file_length;
+  return buffer;
 }
 
 void hexdump(void *buffer, size_t size) {
@@ -63,16 +79,20 @@ void hexdump(void *buffer, size_t size) {
   }
 
   printf("%08lx\n", i);
+  free(buffer);
 }
 
 int main(int argc, char **argv) {
   if (argc != 2) {
     fprintf(stderr, "USAGE: %s <FILE>\n", argv[0]);
-    exit(0);
+    exit(1);
   }
   char *filename = argv[1];
-  char buffer[MAX_BYTES] = {0};
-  size_t file_length = file_open_and_read(filename, buffer, MAX_BYTES);
+  size_t file_length;
+  char *buffer = file_open_and_read(filename, &file_length);
+  if (!buffer) {
+    exit(1);
+  }
   hexdump(buffer, file_length);
   return 0;
 }
